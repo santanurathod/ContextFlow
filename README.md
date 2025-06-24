@@ -9,6 +9,7 @@ This repository contains code and instructions for processing single-cell RNA-se
 ```bash
 cd datasets
 mkdir raw_datasets
+mkdir h5ad_processed_datasets
 cd raw_datasets
 mkdir GSE149457
 mkdir GSE232025

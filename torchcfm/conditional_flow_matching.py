@@ -234,7 +234,7 @@ class ExactOptimalTransportConditionalFlowMatcher(ConditionalFlowMatcher):
         super().__init__(sigma)
         self.ot_sampler = OTPlanSampler(method="exact")
 
-    def sample_location_and_conditional_flow(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, t=None, return_noise=False, lambda_=1):
+    def sample_location_and_conditional_flow(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, t=None, return_noise=False, lambda_=1, lambda_bio_prior=None):
         r"""
         Compute the sample xt (drawn from N(t * x1 + (1 - t) * x0, sigma))
         and the conditional vector field ut(x1|x0) = x1 - x0, see Eq.(15) [1]
@@ -266,7 +266,7 @@ class ExactOptimalTransportConditionalFlowMatcher(ConditionalFlowMatcher):
         """
         # import pdb; pdb.set_trace()
         if p0 is not None and p1 is not None and ct0 is not None and ct1 is not None:
-            x0, x1 = self.ot_sampler.sample_plan(x0, x1, p0, p1, ct0, ct1, lambda_)
+            x0, x1 = self.ot_sampler.sample_plan(x0, x1, p0, p1, ct0, ct1, lambda_, lambda_bio_prior)
         
         elif p0 is not None and p1 is not None:
             x0, x1 = self.ot_sampler.sample_plan(x0, x1, p0, p1, lambda_)

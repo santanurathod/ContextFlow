@@ -1,0 +1,16 @@
+{
+    "use_celltype": true,
+    "use_spatial": true,
+    "use_bio_prior": true,
+    "representation": "pca",
+    "cfm_model": "MLP",
+    "lambda_": 0.5,
+    "lambda_bio_prior": 0.01,
+    "batch_size": 256,
+    "sigma": 0.9,
+    "learning_rate": 1e-4,
+    "n_epochs": 10000,
+    "w": 10,
+    "time_varying": true,
+    "trajectory_steps": 400
+}

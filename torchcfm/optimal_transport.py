@@ -69,7 +69,7 @@ class OTPlanSampler:
         return bio_prior
 
 
-    def get_map(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, lambda_=1):
+    def get_map(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, lambda_=1, lambda_bio_prior=1):
         """Compute the OT plan (wrt squared Euclidean cost) between a source and a target
         minibatch.
 
@@ -99,7 +99,7 @@ class OTPlanSampler:
             pair_dist = pair_dist / pair_dist.max()
             M = lambda_*gene_dist + (1-lambda_)*pair_dist
             bio_prior = self.get_biological_map_prior(ct0, ct1)
-            M = M + bio_prior
+            M = M + lambda_bio_prior*bio_prior
         elif p0 is not None and p1 is not None and ct0 is None and ct1 is None:
             pair_dist = torch.cdist(p0, p1)**2
             pair_dist = pair_dist / pair_dist.max()

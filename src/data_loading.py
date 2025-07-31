@@ -51,7 +51,7 @@ def preprocess_data(scRNA):
 
 
 
-def process_data(scRNA, X_raw, cell_type_key='celltype', labels_dict=None, use_spatial=False, use_celltype=False, use_bio_prior=None):
+def process_data(scRNA, X_raw, cell_type_key='celltype', labels_dict=None, use_spatial=False, use_celltype=False, use_bio_prior=None, representation="umap"):
 
     X_phate=[]
     X_phate_conditional=[]
@@ -65,7 +65,10 @@ def process_data(scRNA, X_raw, cell_type_key='celltype', labels_dict=None, use_s
     left_counter=0
     right_counter=X_raw[0].shape[0]
     for i in range(len(labels_dict)):
-        X_phate.append(scRNA.obsm["X_umap"][left_counter:right_counter])
+        if representation == "umap":
+            X_phate.append(scRNA.obsm["X_umap"][left_counter:right_counter])
+        elif representation == "pca":
+            X_phate.append(scRNA.obsm["X_pca"][left_counter:right_counter])
         X_phate_conditional.append(encoded_labels[left_counter:right_counter])
         if use_spatial:
             Spatial.append(scRNA.obsm['spatial'][left_counter:right_counter])
@@ -84,7 +87,7 @@ def process_data(scRNA, X_raw, cell_type_key='celltype', labels_dict=None, use_s
     return X_phate, X_phate_conditional, Spatial, Celltype_list
 
 
-def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, lambda_=1, Spatial=[], Celltype_list=[], device=None):
+def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, lambda_=1, lambda_bio_prior=None, Spatial=[], Celltype_list=[], device=None):
     """Construct a batch with point sfrom each timepoint pair"""
     ts = []
     xts = []
@@ -137,7 +140,82 @@ def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, lam
             )
             noises.append(eps)
         else:
-            t, xt, ut = FM.sample_location_and_conditional_flow(x0, x1, p0, p1, ct0, ct1, return_noise=return_noise, lambda_= lambda_)
+            t, xt, ut = FM.sample_location_and_conditional_flow(x0, x1, p0, p1, ct0, ct1, return_noise=return_noise, lambda_= lambda_, lambda_bio_prior=lambda_bio_prior)
+        ts.append(t + t_start)
+        xts.append(xt)
+        uts.append(ut)
+        xts_conditional.append(x0_conditional)
+
+
+    t = torch.cat(ts)
+    xt = torch.cat(xts)
+    ut = torch.cat(uts)
+    xts_conditional= torch.cat(xts_conditional)
+    if return_noise:
+        noises = torch.cat(noises)
+        return t, xt, ut, noises, xts_conditional
+    return t, xt, ut, xts_conditional
+
+
+
+def get_batch_new(FM, X, X_conditional, batch_size, train_idx, return_noise=False, lambda_=1, lambda_bio_prior=None, Spatial=[], Celltype_list=[], device=None):
+    """Construct a batch with point sfrom each timepoint pair
+    getting proper pairs of data
+    """
+    ts = []
+    xts = []
+    xts_conditional=[]
+    uts = []
+    noises = []
+    np.random.seed(42)
+
+    for i in range(len(train_idx) - 1):
+        t_start = train_idx[i]
+        t_end = train_idx[i+1]
+        try:
+            b0= np.random.randint(X[t_start].shape[0], size=batch_size)
+            b1= np.random.randint(X[t_end].shape[0], size=batch_size)
+        except:
+            import pdb; pdb.set_trace()
+
+
+        # import pdb; pdb.set_trace()
+        x0 = (torch.from_numpy(X[t_start][b0]).float().to(device))
+        x0_conditional= (torch.from_numpy(X_conditional[t_start][b0]).float().to(device))
+
+        if len(Celltype_list) > 0:
+            ct0= np.array(Celltype_list[t_start])[b0]
+            ct1= np.array(Celltype_list[t_end])[b1]
+        else:
+            ct0= None
+            ct1= None
+        
+        # notice that it's shape[0] here
+        x1 = (
+            torch.from_numpy(
+                X[t_end][b1]
+            )
+            .float()
+            .to(device)
+        )
+        x1_conditional= (
+            torch.from_numpy(X_conditional[t_end][b1])
+        ).float().to(device)
+        
+        if len(Spatial) > 0:
+            p0= torch.from_numpy(Spatial[t_start][b0]).float().to(device)
+            p1= torch.from_numpy(Spatial[t_end][b1]).float().to(device)
+        else:
+            p0= None
+            p1= None
+
+        if return_noise:
+            t, xt, ut, eps = FM.sample_location_and_conditional_flow(
+                x0, x1, return_noise=return_noise
+            )
+            noises.append(eps)
+        else:
+            t, xt, ut = FM.sample_location_and_conditional_flow(x0, x1, p0, p1, ct0, ct1, return_noise=return_noise, lambda_= lambda_, lambda_bio_prior=lambda_bio_prior)
         ts.append(t + t_start)
         xts.append(xt)
         uts.append(ut)

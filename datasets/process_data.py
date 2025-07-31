@@ -15,6 +15,8 @@ import matplotlib.colors as mcolors
 
 base_path= "/Users/rssantanu/Desktop/codebase/constrained_FM/datasets"
 
+n_comps = 50
+
 def load_scRNA_GSE149457(data_path):
     """
     This function processes the GSE149457 dataset and returns the concatenated AnnData object.
@@ -108,7 +110,7 @@ def apply_processing_steps(scRNA, GSE_ID):
     if GSE_ID == "GSE232025":
         sc.pp.highly_variable_genes(scRNA, batch_key='day', n_top_genes=2000, flavor='seurat_v3')
         scRNA = scRNA[:, scRNA.var.highly_variable]
-        sc.tl.pca(scRNA)
+        sc.tl.pca(scRNA, n_comps=n_comps)
         sc.pp.neighbors(scRNA)
         sc.tl.umap(scRNA)
 
@@ -117,9 +119,9 @@ def apply_processing_steps(scRNA, GSE_ID):
         sc.pp.log1p(scRNA)
         sc.pp.highly_variable_genes(scRNA, n_top_genes=2000, subset=True)
         sc.pp.scale(scRNA, max_value=10)
-        sc.tl.pca(scRNA)
+        sc.tl.pca(scRNA, n_comps=n_comps)
         sc.pp.neighbors(scRNA)
-    sc.tl.umap(scRNA)
+        sc.tl.umap(scRNA)
 
     return scRNA
 

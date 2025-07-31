@@ -54,7 +54,7 @@ def train(params, n_times, X_phate, X_phate_conditional, device, fig_address, Sp
     losses = []
     for i in tqdm(range(params['n_epochs'])):
         ot_cfm_optimizer.zero_grad()
-        t, xt, ut, xt_conditional = get_batch(FM, X_phate, X_phate_conditional, batch_size, n_times, lambda_=params['lambda_'], Spatial=Spatial, Celltype_list=Celltype_list, device=device)
+        t, xt, ut, xt_conditional = get_batch(FM, X_phate, X_phate_conditional, batch_size, n_times, lambda_=params['lambda_'], lambda_bio_prior=params['lambda_bio_prior'], Spatial=Spatial, Celltype_list=Celltype_list, device=device)
         if params['use_celltype']:
             cfm_input = torch.cat([xt, xt_conditional[:, None], t[:, None]], dim=-1)
         else:
@@ -90,13 +90,16 @@ if __name__ == "__main__":
 
     params = json.load(open(f'train_configs/{args.train_config}.json'))
 
+    # add more params keys
+    params['dim'] = scRNA.obsm[f'X_{params["representation"]}'].shape[1]
+    params['out_dim'] = scRNA.obsm[f'X_{params["representation"]}'].shape[1]
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     day_list = (scRNA.obs["day"]).values.tolist()
 
     X_raw, data_df = preprocess_data(scRNA)
-    X_phate, X_phate_conditional, Spatial, Celltype_list = process_data(scRNA, X_raw, cell_type_key, labels_dict, params['use_spatial'], params['use_celltype'], params['use_bio_prior'])
-
+    X_phate, X_phate_conditional, Spatial, Celltype_list = process_data(scRNA, X_raw, cell_type_key, labels_dict, params['use_spatial'], params['use_celltype'], params['use_bio_prior'], params['representation'])
 
     n_times = len(X_phate)
 
@@ -124,8 +127,6 @@ if __name__ == "__main__":
         traj_fig_address = f'{fig_folder_address}/trajectory.png'
         plot_trajectories(scRNA, traj.cpu().numpy(), day_list, traj_fig_address)
     
-
-    
     try:
         mmd_list_next_step, wassersten_list_next_step, energy_list_next_step, r2_list_next_step = evaluate_next_step(node, X_phate, device)
         plt.figure(figsize=(8,6))
@@ -140,6 +141,10 @@ if __name__ == "__main__":
         plt.grid(True)
         plt.savefig(f'{fig_folder_address}/next_step_error.png')
         plt.close()
+
+        metric_dict = {'mmd': mmd_list_next_step, 'wasserstein': wassersten_list_next_step, 'energy': energy_list_next_step, 'r2': r2_list_next_step}
+        with open(f'{fig_folder_address}/next_step_error.json', 'w') as f:
+            json.dump(metric_dict, f)
     except:
         print("Error in evaluating next step")
 
@@ -149,7 +154,7 @@ if __name__ == "__main__":
     plt.plot(range(len(mmd_list_IVP)), mmd_list_IVP, label='MMD', marker='o')
     plt.plot(range(len(wassersten_list_IVP)), wassersten_list_IVP, label='Wasserstein', marker='s')
     plt.plot(range(len(energy_list_IVP)), energy_list_IVP, label='Energy Distance', marker='^')
-    plt.plot(range(len(r2_list_IVP)), r2_list_IVP, label='R2 Score', marker='D')
+    # plt.plot(range(len(r2_list_IVP)), r2_list_IVP, label='R2 Score', marker='D')
     plt.xlabel("Timepoint t")
     plt.ylabel("Error")
     plt.title("Distribution Matching Error")
@@ -157,4 +162,7 @@ if __name__ == "__main__":
     plt.grid(True)
     plt.savefig(f'{fig_folder_address}/IVP_error.png')
     plt.close()
-    
+
+    metric_dict_IVP = {'mmd': mmd_list_IVP, 'wasserstein': wassersten_list_IVP, 'energy': energy_list_IVP, 'r2': r2_list_IVP}
+    with open(f'{fig_folder_address}/IVP_error.json', 'w') as f:
+        json.dump(metric_dict_IVP, f)

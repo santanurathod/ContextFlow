@@ -133,7 +133,7 @@ def evaluate_IVP(trajectory, X_input, device, steps=400, n_points=1500, plot_dis
 
     n_times = len(X_input)
     traj_eval_times = [int(i*(steps/(n_times-1))-1) for i in range(n_times)]
-
+    
     for t in range(n_times):
         x1_pred = trajectory[traj_eval_times[t]]
         x1_true = torch.tensor(X_input[t]).float().to(device)

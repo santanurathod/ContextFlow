@@ -4,10 +4,15 @@ from functools import partial
 from typing import Optional, Union
 
 import numpy as np
-import ot as pot
+# import ot as pot
+import ot_modified as pot
 import torch
 from sklearn.preprocessing import LabelEncoder
 import pandas as pd
+
+
+import torch
+import torch.nn.functional as F
 
 class OTPlanSampler:
     """OTPlanSampler implements sampling coordinates according to an OT plan (wrt squared Euclidean
@@ -50,6 +55,8 @@ class OTPlanSampler:
             self.ot_fn = partial(pot.emd, numThreads=num_threads)
         elif method == "sinkhorn":
             self.ot_fn = partial(pot.sinkhorn, reg=reg)
+        elif method == "sinkhorn_relative_entropy":
+            self.ot_fn = partial(pot.sinkhorn, reg=reg, method="sinkhorn_relative_entropy")
         elif method == "unbalanced":
             self.ot_fn = partial(pot.unbalanced.sinkhorn_knopp_unbalanced, reg=reg, reg_m=reg_m)
         elif method == "partial":
@@ -60,6 +67,7 @@ class OTPlanSampler:
         self.reg_m = reg_m
         self.normalize_cost = normalize_cost
         self.warn = warn
+        self.method = method
 
     def get_biological_map_prior(self, ct0, ct1):
 
@@ -68,8 +76,19 @@ class OTPlanSampler:
         bio_prior = np.where(submatrix.values, 0, -100000)
         return bio_prior
 
+    def get_relative_entropy_prior(self, p0=None, p1=None, ct0=None, ct1=None, variation_kind= 'only_spatial', **kwargs):
+        
+        if variation_kind == 'only_spatial':
+            P_Dist= torch.cdist(p0, p1)**2
+            Q_prior=F.softmax(-P_Dist, dim=1).detach().cpu().numpy()
+        else:
+            raise ValueError(f"Unknown variation kind: {variation_kind}")
+        
+        return Q_prior
+        
 
-    def get_map(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, lambda_=1, lambda_bio_prior=1):
+        
+    def get_map(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, lambda_=1, lambda_bio_prior=0, method="exact"):
         """Compute the OT plan (wrt squared Euclidean cost) between a source and a target
         minibatch.
 
@@ -106,9 +125,14 @@ class OTPlanSampler:
             M = lambda_*gene_dist + (1-lambda_)*pair_dist
         else:
             M = gene_dist
+        
         if self.normalize_cost:
             M = M / M.max()  # should not be normalized when using minibatches
-        p = self.ot_fn(a, b, M.detach().cpu().numpy())
+        if method == "sinkhorn_relative_entropy": # working only spatial variation for now
+            Q_prior = self.get_relative_entropy_prior(p0=p0, p1=p1)
+            p = self.ot_fn(a=a, b=b, M=M.detach().cpu().numpy(), Q_prior=Q_prior)
+        else:
+            p = self.ot_fn(a=a, b=b, M=M.detach().cpu().numpy())
         if not np.all(np.isfinite(p)):
             print("ERROR: p is not finite")
             print(p)
@@ -145,7 +169,7 @@ class OTPlanSampler:
         )
         return np.divmod(choices, pi.shape[1])
 
-    def sample_plan(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, replace=True, lambda_=1):
+    def sample_plan(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, replace=True, lambda_=1, lambda_bio_prior=0, method="exact"):
         r"""Compute the OT plan $\pi$ (wrt squared Euclidean cost) between a source and a target
         minibatch and draw source and target samples from pi $(x,z) \sim \pi$
 
@@ -165,7 +189,8 @@ class OTPlanSampler:
         x1[j] : Tensor, shape (bs, *dim)
             represents the source minibatch drawn from $\pi$
         """
-        pi = self.get_map(x0, x1, p0, p1, ct0, ct1, lambda_)
+        
+        pi = self.get_map(x0, x1, p0, p1, ct0, ct1, lambda_=lambda_, lambda_bio_prior=lambda_bio_prior, method=method)
         i, j = self.sample_map(pi, x0.shape[0], replace=replace)
         return x0[i], x1[j]
 

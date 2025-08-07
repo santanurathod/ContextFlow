@@ -87,7 +87,7 @@ def process_data(scRNA, X_raw, cell_type_key='celltype', labels_dict=None, use_s
     return X_phate, X_phate_conditional, Spatial, Celltype_list
 
 
-def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, lambda_=1, lambda_bio_prior=None, Spatial=[], Celltype_list=[], device=None):
+def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, lambda_=1, lambda_bio_prior=None, Spatial=[], Celltype_list=[], device=None, method="exact"):
     """Construct a batch with point sfrom each timepoint pair"""
     ts = []
     xts = []
@@ -95,7 +95,7 @@ def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, lam
     uts = []
     noises = []
     np.random.seed(42)
-
+    
     for t_start in range(n_times - 1):
         try:
             b0= np.random.randint(X[t_start].shape[0], size=batch_size)
@@ -140,7 +140,7 @@ def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, lam
             )
             noises.append(eps)
         else:
-            t, xt, ut = FM.sample_location_and_conditional_flow(x0, x1, p0, p1, ct0, ct1, return_noise=return_noise, lambda_= lambda_, lambda_bio_prior=lambda_bio_prior)
+            t, xt, ut = FM.sample_location_and_conditional_flow(x0, x1, p0, p1, ct0, ct1, return_noise=return_noise, lambda_= lambda_, lambda_bio_prior=lambda_bio_prior, method=method)
         ts.append(t + t_start)
         xts.append(xt)
         uts.append(ut)
@@ -158,9 +158,9 @@ def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, lam
 
 
 
-def get_batch_new(FM, X, X_conditional, batch_size, train_idx, return_noise=False, lambda_=1, lambda_bio_prior=None, Spatial=[], Celltype_list=[], device=None):
-    """Construct a batch with point sfrom each timepoint pair
-    getting proper pairs of data
+def get_batch_new(FM, X, X_conditional, batch_size, train_idx, return_noise=False, lambda_=1, lambda_bio_prior=None, Spatial=[], Celltype_list=[], device=None, method="exact"):
+    """Construct a batch with point from each timepoint pair
+    getting proper pairs of data, I made this for the interpolation case
     """
     ts = []
     xts = []
@@ -215,7 +215,7 @@ def get_batch_new(FM, X, X_conditional, batch_size, train_idx, return_noise=Fals
             )
             noises.append(eps)
         else:
-            t, xt, ut = FM.sample_location_and_conditional_flow(x0, x1, p0, p1, ct0, ct1, return_noise=return_noise, lambda_= lambda_, lambda_bio_prior=lambda_bio_prior)
+            t, xt, ut = FM.sample_location_and_conditional_flow(x0, x1, p0, p1, ct0, ct1, return_noise=return_noise, lambda_= lambda_, lambda_bio_prior=lambda_bio_prior, method=method)
         ts.append(t + t_start)
         xts.append(xt)
         uts.append(ut)

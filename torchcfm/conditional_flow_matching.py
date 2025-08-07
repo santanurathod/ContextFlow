@@ -223,7 +223,7 @@ class ExactOptimalTransportConditionalFlowMatcher(ConditionalFlowMatcher):
     It overrides the sample_location_and_conditional_flow.
     """
 
-    def __init__(self, sigma: Union[float, int] = 0.0):
+    def __init__(self, sigma: Union[float, int] = 0.0, ot_method="exact", entropy_reg=0.05):
         r"""Initialize the ConditionalFlowMatcher class. It requires the hyper-parameter $\sigma$.
 
         Parameters
@@ -232,9 +232,9 @@ class ExactOptimalTransportConditionalFlowMatcher(ConditionalFlowMatcher):
         ot_sampler: exact OT method to draw couplings (x0, x1) (see Eq.(17) [1]).
         """
         super().__init__(sigma)
-        self.ot_sampler = OTPlanSampler(method="exact")
+        self.ot_sampler = OTPlanSampler(method=ot_method, reg=entropy_reg)
 
-    def sample_location_and_conditional_flow(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, t=None, return_noise=False, lambda_=1, lambda_bio_prior=None):
+    def sample_location_and_conditional_flow(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, t=None, return_noise=False, lambda_=1, lambda_bio_prior=None, method="exact"):
         r"""
         Compute the sample xt (drawn from N(t * x1 + (1 - t) * x0, sigma))
         and the conditional vector field ut(x1|x0) = x1 - x0, see Eq.(15) [1]
@@ -264,14 +264,14 @@ class ExactOptimalTransportConditionalFlowMatcher(ConditionalFlowMatcher):
         ----------
         [1] Improving and Generalizing Flow-Based Generative Models with minibatch optimal transport, Preprint, Tong et al.
         """
-        # import pdb; pdb.set_trace()
-        if p0 is not None and p1 is not None and ct0 is not None and ct1 is not None:
-            x0, x1 = self.ot_sampler.sample_plan(x0, x1, p0, p1, ct0, ct1, lambda_, lambda_bio_prior)
         
+        if p0 is not None and p1 is not None and ct0 is not None and ct1 is not None:
+            x0, x1 = self.ot_sampler.sample_plan(x0, x1, p0, p1, ct0, ct1, lambda_=lambda_, lambda_bio_prior=lambda_bio_prior, method=method)
         elif p0 is not None and p1 is not None:
-            x0, x1 = self.ot_sampler.sample_plan(x0, x1, p0, p1, lambda_)
+            x0, x1 = self.ot_sampler.sample_plan(x0, x1, p0, p1, lambda_=lambda_, method=method)
         else:
             x0, x1 = self.ot_sampler.sample_plan(x0, x1)
+            
         return super().sample_location_and_conditional_flow(x0, x1, t, return_noise)
 
     def guided_sample_location_and_conditional_flow(

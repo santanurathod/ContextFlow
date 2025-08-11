@@ -272,7 +272,7 @@ class ExactOptimalTransportConditionalFlowMatcher(ConditionalFlowMatcher):
         else:
             x0, x1 = self.ot_sampler.sample_plan(x0, x1)
             
-        return super().sample_location_and_conditional_flow(x0, x1, t, return_noise)
+        return super().sample_location_and_conditional_flow(x0, x1, t, return_noise, method=method)
 
     def guided_sample_location_and_conditional_flow(
         self, x0, x1, y0=None, y1=None, t=None, return_noise=False

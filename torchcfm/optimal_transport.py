@@ -70,8 +70,9 @@ class OTPlanSampler:
         self.method = method
 
     def get_biological_map_prior(self, ct0, ct1):
-
-        feasible_matrix= pd.read_csv('/Users/rssantanu/Desktop/codebase/constrained_FM/datasets/metadata/cell_type_feasibility_matrix.csv', index_col=0)
+        
+        # the file name is hardcoded for now, need to make it more general
+        feasible_matrix= pd.read_csv('/Users/rssantanu/Desktop/codebase/constrained_FM/datasets/metadata/cell_type_feasibility_matrix_GSE232025.csv', index_col=0)
         submatrix = feasible_matrix.loc[ct0, ct1]
         bio_prior = np.where(submatrix.values, 0, -100000)
         return bio_prior

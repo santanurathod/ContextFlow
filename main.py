@@ -58,7 +58,7 @@ def train(params, n_times, X_phate, X_phate_conditional, device, fig_address, Sp
     losses = []
     for i in tqdm(range(params['n_epochs'])):
         ot_cfm_optimizer.zero_grad()
-        t, xt, ut, xt_conditional = get_batch(FM, X_phate, X_phate_conditional, batch_size, n_times, lambda_=params['lambda_'], lambda_bio_prior=params['lambda_bio_prior'], Spatial=Spatial, Celltype_list=Celltype_list, device=device, method=params['ot_method'])
+        t, xt, ut, xt_conditional = get_batch(FM, X_phate, X_phate_conditional, batch_size, n_times, lambda_=params['lambda_'], lambda_bio_prior=params['lambda_bio_prior'], Spatial=Spatial, Celltype_list=Celltype_list, device=device, method=params['ot_method'], cc_communication_type=params['cc_communication_type'])
         if params['use_celltype']:
             cfm_input = torch.cat([xt, xt_conditional[:, None], t[:, None]], dim=-1)
         else:

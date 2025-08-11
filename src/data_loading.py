@@ -87,7 +87,7 @@ def process_data(scRNA, X_raw, cell_type_key='celltype', labels_dict=None, use_s
     return X_phate, X_phate_conditional, Spatial, Celltype_list
 
 
-def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, lambda_=1, lambda_bio_prior=None, Spatial=[], Celltype_list=[], device=None, method="exact"):
+def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, lambda_=1, lambda_bio_prior=None, Spatial=[], Celltype_list=[], device=None, method="exact", cc_communication_type=None):
     """Construct a batch with point sfrom each timepoint pair"""
     ts = []
     xts = []
@@ -95,8 +95,9 @@ def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, lam
     uts = []
     noises = []
     np.random.seed(42)
-    
+ 
     for t_start in range(n_times - 1):
+
         try:
             b0= np.random.randint(X[t_start].shape[0], size=batch_size)
             b1= np.random.randint(X[t_start+1].shape[0], size=batch_size)
@@ -140,7 +141,7 @@ def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, lam
             )
             noises.append(eps)
         else:
-            t, xt, ut = FM.sample_location_and_conditional_flow(x0, x1, p0, p1, ct0, ct1, return_noise=return_noise, lambda_= lambda_, lambda_bio_prior=lambda_bio_prior, method=method)
+            t, xt, ut = FM.sample_location_and_conditional_flow(x0, x1, p0, p1, ct0, ct1, return_noise=return_noise, lambda_= lambda_, lambda_bio_prior=lambda_bio_prior, method=method, cc_communication_type=cc_communication_type, cc_index=t_start)
         ts.append(t + t_start)
         xts.append(xt)
         uts.append(ut)

@@ -77,9 +77,33 @@ class OTPlanSampler:
         bio_prior = np.where(submatrix.values, 0, -100000)
         return bio_prior
 
+    def get_communication_matrix(self, ct0, ct1, cc_communication_type, cc_index):
+
+        if cc_communication_type == 'all_at_once':
+            communication_matrix= pd.read_csv('/Users/rssantanu/Desktop/codebase/constrained_FM/datasets/metadata/cell_cell_communication_GSE232025/all_at_once_GSE232025.csv', index_col=0)
+            submatrix = communication_matrix.loc[ct0, ct1]
+            Q_prior = submatrix.values
+            return Q_prior
+        elif cc_communication_type == 'step_by_step':
+            communication_matrix= pd.read_csv(f'/Users/rssantanu/Desktop/codebase/constrained_FM/datasets/metadata/cell_cell_communication_GSE232025/step_by_step_{cc_index}_GSE232025.csv', index_col=0)
+            submatrix = communication_matrix.loc[ct0, ct1]
+            Q_prior = submatrix.values
+            return Q_prior
+        else:
+            raise ValueError(f"Unknown communication type: {cc_communication_type}")
+        
+        
     def get_relative_entropy_prior(self, p0=None, p1=None, ct0=None, ct1=None, variation_kind= 'only_spatial', **kwargs):
         
         if variation_kind == 'only_spatial':
+            P_Dist= torch.cdist(p0, p1)**2
+            Q_prior=F.softmax(-P_Dist, dim=1).detach().cpu().numpy()
+        elif variation_kind.split('#')[0] == 'step_by_step': # when we consider communication between timepoints
+            cc_index= int(variation_kind.split('#')[1])
+            P_Dist= torch.cdist(p0, p1)**2
+            Q_prior=F.softmax(-P_Dist, dim=1).detach().cpu().numpy()
+
+        elif variation_kind.split('#')[0] == 'all_at_once': # when we consider overall communication between timepoints
             P_Dist= torch.cdist(p0, p1)**2
             Q_prior=F.softmax(-P_Dist, dim=1).detach().cpu().numpy()
         else:
@@ -89,7 +113,7 @@ class OTPlanSampler:
         
 
         
-    def get_map(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, lambda_=1, lambda_bio_prior=0, method="exact"):
+    def get_map(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, lambda_=1, lambda_bio_prior=0, method="exact", cc_communication_type=None, cc_index=None):
         """Compute the OT plan (wrt squared Euclidean cost) between a source and a target
         minibatch.
 
@@ -129,8 +153,11 @@ class OTPlanSampler:
         
         if self.normalize_cost:
             M = M / M.max()  # should not be normalized when using minibatches
-        if method == "sinkhorn_relative_entropy": # working only spatial variation for now
+        if method == "sinkhorn_relative_entropy" and cc_communication_type==None: # working only spatial variation for now
             Q_prior = self.get_relative_entropy_prior(p0=p0, p1=p1)
+            p = self.ot_fn(a=a, b=b, M=M.detach().cpu().numpy(), Q_prior=Q_prior)
+        elif method == "sinkhorn_relative_entropy" and cc_communication_type!=None:
+            Q_prior = self.get_relative_entropy_prior(p0=p0, p1=p1, ct0=ct0, ct1=ct1, variation_kind=f'{cc_communication_type}#{cc_index}')
             p = self.ot_fn(a=a, b=b, M=M.detach().cpu().numpy(), Q_prior=Q_prior)
         else:
             p = self.ot_fn(a=a, b=b, M=M.detach().cpu().numpy())
@@ -170,7 +197,7 @@ class OTPlanSampler:
         )
         return np.divmod(choices, pi.shape[1])
 
-    def sample_plan(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, replace=True, lambda_=1, lambda_bio_prior=0, method="exact"):
+    def sample_plan(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, replace=True, lambda_=1, lambda_bio_prior=0, method="exact", cc_communication_type=None, cc_index=None):
         r"""Compute the OT plan $\pi$ (wrt squared Euclidean cost) between a source and a target
         minibatch and draw source and target samples from pi $(x,z) \sim \pi$
 
@@ -191,7 +218,7 @@ class OTPlanSampler:
             represents the source minibatch drawn from $\pi$
         """
         
-        pi = self.get_map(x0, x1, p0, p1, ct0, ct1, lambda_=lambda_, lambda_bio_prior=lambda_bio_prior, method=method)
+        pi = self.get_map(x0, x1, p0, p1, ct0, ct1, lambda_=lambda_, lambda_bio_prior=lambda_bio_prior, method=method, cc_communication_type=cc_communication_type, cc_index=cc_index)
         i, j = self.sample_map(pi, x0.shape[0], replace=replace)
         return x0[i], x1[j]
 

@@ -264,7 +264,6 @@ class ExactOptimalTransportConditionalFlowMatcher(ConditionalFlowMatcher):
         ----------
         [1] Improving and Generalizing Flow-Based Generative Models with minibatch optimal transport, Preprint, Tong et al.
         """
-        
         if p0 is not None and p1 is not None and ct0 is not None and ct1 is not None:
             x0, x1 = self.ot_sampler.sample_plan(x0, x1, p0, p1, ct0, ct1, lambda_=lambda_, lambda_bio_prior=lambda_bio_prior, method=method, cc_communication_type= cc_communication_type, cc_index= cc_index)
         elif p0 is not None and p1 is not None:
@@ -272,7 +271,7 @@ class ExactOptimalTransportConditionalFlowMatcher(ConditionalFlowMatcher):
         else:
             x0, x1 = self.ot_sampler.sample_plan(x0, x1)
             
-        return super().sample_location_and_conditional_flow(x0, x1, t, return_noise, method=method)
+        return super().sample_location_and_conditional_flow(x0, x1, t, return_noise)
 
     def guided_sample_location_and_conditional_flow(
         self, x0, x1, y0=None, y1=None, t=None, return_noise=False

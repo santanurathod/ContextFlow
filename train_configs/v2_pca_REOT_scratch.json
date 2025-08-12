@@ -4,6 +4,7 @@
     "use_bio_prior": false,
     "representation": "pca",
     "ot_method": "sinkhorn_relative_entropy",
+    "cc_communication_type": null,    
     "entropy_reg": 1e-3,
     "cfm_model": "MLP",
     "lambda_": 0.5,

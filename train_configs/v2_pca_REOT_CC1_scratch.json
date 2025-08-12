@@ -1,5 +1,5 @@
 {
-    "use_celltype": false,
+    "use_celltype_conditional": true,
     "use_spatial": true,
     "use_bio_prior": false,
     "representation": "pca",

@@ -100,11 +100,14 @@ class OTPlanSampler:
             Q_prior=F.softmax(-P_Dist, dim=1).detach().cpu().numpy()
         elif variation_kind.split('#')[0] == 'step_by_step': # when we consider communication between timepoints
             cc_index= int(variation_kind.split('#')[1])
-            P_Dist= torch.cdist(p0, p1)**2
+            communication_matrix= self.get_communication_matrix(ct0, ct1, 'step_by_step', cc_index)
+            P_Dist= torch.cdist(p0, p1)**2+communication_matrix
             Q_prior=F.softmax(-P_Dist, dim=1).detach().cpu().numpy()
 
         elif variation_kind.split('#')[0] == 'all_at_once': # when we consider overall communication between timepoints
-            P_Dist= torch.cdist(p0, p1)**2
+            import pdb; pdb.set_trace()
+            communication_matrix= self.get_communication_matrix(ct0, ct1, 'all_at_once')
+            P_Dist= torch.cdist(p0, p1)**2+communication_matrix
             Q_prior=F.softmax(-P_Dist, dim=1).detach().cpu().numpy()
         else:
             raise ValueError(f"Unknown variation kind: {variation_kind}")
@@ -153,6 +156,7 @@ class OTPlanSampler:
         
         if self.normalize_cost:
             M = M / M.max()  # should not be normalized when using minibatches
+        
         if method == "sinkhorn_relative_entropy" and cc_communication_type==None: # working only spatial variation for now
             Q_prior = self.get_relative_entropy_prior(p0=p0, p1=p1)
             p = self.ot_fn(a=a, b=b, M=M.detach().cpu().numpy(), Q_prior=Q_prior)

@@ -141,7 +141,11 @@ if __name__ == "__main__":
 
 
 """
-python creat_cell_cell_communication_matrix.py \
+
+example usage:
+note the directory structure of the input file and output directory
+
+python create_cell_cell_communication_matrix.py \
     --input_file /Users/rssantanu/Desktop/codebase/constrained_FM/datasets/h5ad_processed_datasets/GSE232025_stereoseq.h5ad \
     --output_dir /Users/rssantanu/Desktop/codebase/constrained_FM/datasets/metadata/cell_cell_communication_GSE232025 \
     --groupby celltype \

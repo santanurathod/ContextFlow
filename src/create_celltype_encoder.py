@@ -54,3 +54,9 @@ if __name__ == "__main__":
     pickle.dump(le, open(f'datasets/metadata/cell_label_encoder_{args.h5ad_path.split("_")[0]}/label_encoder.pkl', 'wb'))
 
 
+
+"""
+example usage:
+
+python create_celltype_encoder.py --h5ad_path GSE232025_stereoseq.h5ad
+"""

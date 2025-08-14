@@ -70,15 +70,20 @@ def process_data(scRNA, X_raw, cell_type_key='celltype', labels_dict=None, use_s
         elif representation == "pca":
             X_phate.append(scRNA.obsm["X_pca"][left_counter:right_counter])
         X_phate_conditional.append(encoded_labels[left_counter:right_counter])
-        if use_spatial:
-            Spatial.append(scRNA.obsm['spatial'][left_counter:right_counter])
+        # if use_spatial:
+        #     Spatial.append(scRNA.obsm['spatial'][left_counter:right_counter])
+        
         # cen= [(scRNA.obsm['spatial'][left_counter:right_counter])[:,0].mean(), (scRNA.obsm['spatial'][left_counter:right_counter])[:,1].mean()]
         # Spatial.append(scRNA.obsm['spatial'][left_counter:right_counter]-cen)
 
-        if use_bio_prior:
-            Celltype_list.append(all_celltypes[left_counter:right_counter])
-            # Celltype_list.append(encoded_labels[left_counter:right_counter])
-    
+        Spatial.append(scRNA.obsm['spatial'][left_counter:right_counter])
+
+        # if use_bio_prior:
+            # Celltype_list.append(all_celltypes[left_counter:right_counter])
+
+        # Celltype_list.append(encoded_labels[left_counter:right_counter]) ## note: these are encoded labels, not the actual cell types
+
+        Celltype_list.append(all_celltypes[left_counter:right_counter])
 
         if i<len(labels_dict)-1:
             left_counter=right_counter
@@ -87,7 +92,7 @@ def process_data(scRNA, X_raw, cell_type_key='celltype', labels_dict=None, use_s
     return X_phate, X_phate_conditional, Spatial, Celltype_list
 
 
-def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, lambda_=1, lambda_bio_prior=None, Spatial=[], Celltype_list=[], device=None, method="exact", cc_communication_type=None):
+def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, Spatial=[], Celltype_list=[], device=None, params=None):
     """Construct a batch with point sfrom each timepoint pair"""
     ts = []
     xts = []
@@ -141,7 +146,7 @@ def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, lam
             )
             noises.append(eps)
         else:
-            t, xt, ut = FM.sample_location_and_conditional_flow(x0, x1, p0, p1, ct0, ct1, return_noise=return_noise, lambda_= lambda_, lambda_bio_prior=lambda_bio_prior, method=method, cc_communication_type=cc_communication_type, cc_index=t_start)
+            t, xt, ut = FM.sample_location_and_conditional_flow(x0, x1, p0, p1, ct0, ct1, return_noise=return_noise, cc_index=t_start, params=params)
         ts.append(t + t_start)
         xts.append(xt)
         uts.append(ut)

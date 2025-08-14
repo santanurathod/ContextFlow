@@ -81,34 +81,60 @@ class OTPlanSampler:
 
         if cc_communication_type == 'all_at_once':
             communication_matrix= pd.read_csv('/Users/rssantanu/Desktop/codebase/constrained_FM/datasets/metadata/cell_cell_communication_GSE232025/all_at_once_GSE232025.csv', index_col=0)
+            
             submatrix = communication_matrix.loc[ct0, ct1]
             Q_prior = submatrix.values
-            return Q_prior
         elif cc_communication_type == 'step_by_step':
             communication_matrix= pd.read_csv(f'/Users/rssantanu/Desktop/codebase/constrained_FM/datasets/metadata/cell_cell_communication_GSE232025/step_by_step_{cc_index}_GSE232025.csv', index_col=0)
+            
             submatrix = communication_matrix.loc[ct0, ct1]
             Q_prior = submatrix.values
-            return Q_prior
         else:
             raise ValueError(f"Unknown communication type: {cc_communication_type}")
+
+        Q_prior = Q_prior / Q_prior.max()
+
+        return Q_prior
         
         
-    def get_relative_entropy_prior(self, p0=None, p1=None, ct0=None, ct1=None, variation_kind= 'only_spatial', **kwargs):
+    def get_relative_entropy_prior(self, p0=None, p1=None, ct0=None, ct1=None, ot_reg_variation= 'relativeentropic_g+p', cc_communication_type=None, cc_index=None, ot_reg_lambda=None):
         
-        if variation_kind == 'only_spatial':
+        if 'p' in ot_reg_variation.split('_')[1]:
+
+            from sklearn.preprocessing import MinMaxScaler
+            scaler = MinMaxScaler()
+ 
             P_Dist= torch.cdist(p0, p1)**2
-            Q_prior=F.softmax(-P_Dist, dim=1).detach().cpu().numpy()
-        elif variation_kind.split('#')[0] == 'step_by_step': # when we consider communication between timepoints
-            cc_index= int(variation_kind.split('#')[1])
-            communication_matrix= self.get_communication_matrix(ct0, ct1, 'step_by_step', cc_index)
-            P_Dist= torch.cdist(p0, p1)**2+communication_matrix
+
+            ## kind of normalization to try
+            #1, reverts to uniform plan but surprisingly works better
+            # P_Dist_norm = scaler.fit_transform(P_Dist)  # Now in [0, 1]
+            # P_Dist_norm = torch.from_numpy(P_Dist_norm)
+            # P_Dist= P_Dist_norm
+
+            P_Dist= P_Dist / P_Dist.max()
+
+            
+        # import pdb; pdb.set_trace()
+
+        if ot_reg_variation == 'relativeentropic_g+p':
             Q_prior=F.softmax(-P_Dist, dim=1).detach().cpu().numpy()
 
-        elif variation_kind.split('#')[0] == 'all_at_once': # when we consider overall communication between timepoints
-            import pdb; pdb.set_trace()
-            communication_matrix= self.get_communication_matrix(ct0, ct1, 'all_at_once')
-            P_Dist= torch.cdist(p0, p1)**2+communication_matrix
+            
+        elif ot_reg_variation == 'relativeentropic_g+p+c' and cc_communication_type == 'step_by_step': # when we consider communication between timepoints
+            assert cc_index!=None
+            cc_index= int(cc_index)
+            communication_matrix= self.get_communication_matrix(ct0, ct1, 'step_by_step', cc_index)
+            communication_matrix= communication_matrix / communication_matrix.max()
+            P_Dist= ot_reg_lambda*P_Dist+(1-ot_reg_lambda)*communication_matrix
             Q_prior=F.softmax(-P_Dist, dim=1).detach().cpu().numpy()
+
+        elif ot_reg_variation == 'relativeentropic_g+p+c' and cc_communication_type == 'all_at_once': # when we consider overall communication between timepoints
+            communication_matrix= self.get_communication_matrix(ct0, ct1, 'all_at_once', cc_index)
+            communication_matrix= communication_matrix / communication_matrix.max()
+            P_Dist= ot_reg_lambda*P_Dist+(1-ot_reg_lambda)*communication_matrix
+            Q_prior=F.softmax(-P_Dist, dim=1).detach().cpu().numpy()
+
         else:
             raise ValueError(f"Unknown variation kind: {variation_kind}")
         
@@ -116,7 +142,7 @@ class OTPlanSampler:
         
 
         
-    def get_map(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, lambda_=1, lambda_bio_prior=0, method="exact", cc_communication_type=None, cc_index=None):
+    def get_map(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, method="exact", cc_index=None, params=None):
         """Compute the OT plan (wrt squared Euclidean cost) between a source and a target
         minibatch.
 
@@ -132,6 +158,19 @@ class OTPlanSampler:
         p : numpy array, shape (bs, bs)
             represents the OT plan between minibatches
         """
+
+        lambda_= params['lambda_']
+        lambda_bio_prior= params['lambda_bio_prior']
+        cc_communication_type= params['cc_communication_type']
+        ot_cost_variation= params['OT_cost_variation']
+        ot_reg_variation= params['OT_reg_variation']
+        ot_reg_lambda= params['OT_reg_lambda']
+
+
+        if ot_reg_variation == 'relativeentropic_g+p+c':
+            assert cc_communication_type!=None
+
+
         a, b = pot.unif(x0.shape[0]), pot.unif(x1.shape[0])
         if x0.dim() > 2:
             x0 = x0.reshape(x0.shape[0], -1)
@@ -139,15 +178,20 @@ class OTPlanSampler:
             x1 = x1.reshape(x1.shape[0], -1)
 
         gene_dist = torch.cdist(x0, x1)**2
+        
+        # # the normalization is something I'm trying, earlier it wasn't the case so let's see if it works
+        # gene_dist = gene_dist / gene_dist.max()
 
         # import pdb; pdb.set_trace()
-        if p0 is not None and p1 is not None and ct0 is not None and ct1 is not None:
+        # if p0 is not None and p1 is not None and ct0 is not None and ct1 is not None:
+        if ot_cost_variation == 'g+p+f':
             pair_dist = torch.cdist(p0, p1)**2
             pair_dist = pair_dist / pair_dist.max()
             M = lambda_*gene_dist + (1-lambda_)*pair_dist
             bio_prior = self.get_biological_map_prior(ct0, ct1)
             M = M + lambda_bio_prior*bio_prior
-        elif p0 is not None and p1 is not None and ct0 is None and ct1 is None:
+        # elif p0 is not None and p1 is not None and ct0 is None and ct1 is None:
+        elif ot_cost_variation == 'g+p':
             pair_dist = torch.cdist(p0, p1)**2
             pair_dist = pair_dist / pair_dist.max()
             M = lambda_*gene_dist + (1-lambda_)*pair_dist
@@ -157,11 +201,13 @@ class OTPlanSampler:
         if self.normalize_cost:
             M = M / M.max()  # should not be normalized when using minibatches
         
-        if method == "sinkhorn_relative_entropy" and cc_communication_type==None: # working only spatial variation for now
-            Q_prior = self.get_relative_entropy_prior(p0=p0, p1=p1)
+        # import pdb; pdb.set_trace()
+
+        if method == "sinkhorn_relative_entropy" and ot_reg_variation == 'relativeentropic_g+p': # working only spatial variation for now
+            Q_prior = self.get_relative_entropy_prior(p0=p0, p1=p1, ot_reg_variation=ot_reg_variation)
             p = self.ot_fn(a=a, b=b, M=M.detach().cpu().numpy(), Q_prior=Q_prior)
-        elif method == "sinkhorn_relative_entropy" and cc_communication_type!=None:
-            Q_prior = self.get_relative_entropy_prior(p0=p0, p1=p1, ct0=ct0, ct1=ct1, variation_kind=f'{cc_communication_type}#{cc_index}')
+        elif method == "sinkhorn_relative_entropy" and ot_reg_variation == 'relativeentropic_g+p+c':
+            Q_prior = self.get_relative_entropy_prior(p0=p0, p1=p1, ct0=ct0, ct1=ct1, ot_reg_variation=ot_reg_variation, cc_communication_type=cc_communication_type, cc_index=cc_index, ot_reg_lambda=ot_reg_lambda)
             p = self.ot_fn(a=a, b=b, M=M.detach().cpu().numpy(), Q_prior=Q_prior)
         else:
             p = self.ot_fn(a=a, b=b, M=M.detach().cpu().numpy())
@@ -201,7 +247,7 @@ class OTPlanSampler:
         )
         return np.divmod(choices, pi.shape[1])
 
-    def sample_plan(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, replace=True, lambda_=1, lambda_bio_prior=0, method="exact", cc_communication_type=None, cc_index=None):
+    def sample_plan(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, replace=True, method="exact", cc_index=None, params=None):
         r"""Compute the OT plan $\pi$ (wrt squared Euclidean cost) between a source and a target
         minibatch and draw source and target samples from pi $(x,z) \sim \pi$
 
@@ -222,7 +268,7 @@ class OTPlanSampler:
             represents the source minibatch drawn from $\pi$
         """
         
-        pi = self.get_map(x0, x1, p0, p1, ct0, ct1, lambda_=lambda_, lambda_bio_prior=lambda_bio_prior, method=method, cc_communication_type=cc_communication_type, cc_index=cc_index)
+        pi = self.get_map(x0, x1, p0, p1, ct0, ct1, method=method, cc_index=cc_index, params=params)
         i, j = self.sample_map(pi, x0.shape[0], replace=replace)
         return x0[i], x1[j]
 

@@ -43,7 +43,7 @@ def train(params, n_times, X_phate, X_phate_conditional, device, fig_address, Sp
         raise ValueError(f"Unknown model: {params['cfm_model']}. Available: {list(MODEL_REGISTRY.keys())}")
     
     ot_cfm_model = model_class(
-        dim=(params['dim']+1 if params['use_celltype'] else params['dim']),
+        dim=(params['dim']+1 if params['use_celltype_conditional'] else params['dim']),
         out_dim=params['out_dim'],
         time_varying=params['time_varying'],
         w=params['w']
@@ -58,8 +58,8 @@ def train(params, n_times, X_phate, X_phate_conditional, device, fig_address, Sp
     losses = []
     for i in tqdm(range(params['n_epochs'])):
         ot_cfm_optimizer.zero_grad()
-        t, xt, ut, xt_conditional = get_batch(FM, X_phate, X_phate_conditional, batch_size, n_times, lambda_=params['lambda_'], lambda_bio_prior=params['lambda_bio_prior'], Spatial=Spatial, Celltype_list=Celltype_list, device=device, method=params['ot_method'], cc_communication_type=params['cc_communication_type'])
-        if params['use_celltype']:
+        t, xt, ut, xt_conditional = get_batch(FM, X_phate, X_phate_conditional, batch_size, n_times, Spatial=Spatial, Celltype_list=Celltype_list, device=device, params=params)
+        if params['use_celltype_conditional']:
             cfm_input = torch.cat([xt, xt_conditional[:, None], t[:, None]], dim=-1)
         else:
             cfm_input = torch.cat([xt, t[:, None]], dim=-1)
@@ -85,13 +85,24 @@ if __name__ == "__main__":
     parser.add_argument("--h5ad_path", type=str, default="GSE232025_stereoseq.h5ad", help="Path to input h5ad file")
     parser.add_argument("--n_folds", type=int, default=1, help="Number of folds for cross-validation")
     parser.add_argument("--use_all_data", type=bool, default=False, help="Use all data for training")
+    parser.add_argument("--new_experiment", type=str, default=None, help="there's several design choices for the experiment")
     args = parser.parse_args()
 
     num_folds = args.n_folds
     use_all_data = args.use_all_data
-    fig_folder_address = f'./experiment_figures/use_all_data_{args.use_all_data}_{args.h5ad_path.split("_")[0]}/{args.train_config}'
+    if args.new_experiment is not None:
+        fig_folder_address = f'./experiment_figures/use_all_data_{args.use_all_data}_{args.h5ad_path.split("_")[0]}/{args.new_experiment}/{args.train_config}'
+    else:
+        fig_folder_address = f'./experiment_figures/use_all_data_{args.use_all_data}_{args.h5ad_path.split("_")[0]}/{args.train_config}'
+    curr_i = 0
+    if os.path.exists(fig_folder_address):
+        while os.path.exists(fig_folder_address):
+            fig_folder_address = fig_folder_address + f'_{curr_i}'
+            curr_i += 1
     os.makedirs(fig_folder_address, exist_ok=True)
     
+    print(f'fig_folder_address: {fig_folder_address}')
+
     scRNA = ad.read_h5ad(os.path.join(os.path.dirname(__file__), 'datasets/h5ad_processed_datasets', args.h5ad_path))
     labels_dict = {'1':1, '2':2, '3':3, '4':4, '5':5}
     cell_type_key = 'celltype'
@@ -107,7 +118,7 @@ if __name__ == "__main__":
     day_list = (scRNA.obs["day"]).values.tolist()
 
     X_raw, data_df = preprocess_data(scRNA)
-    X_phate, X_phate_conditional, Spatial, Celltype_list = process_data(scRNA, X_raw, cell_type_key, labels_dict, params['use_spatial'], params['use_celltype'], params['use_bio_prior'], params['representation'])
+    X_phate, X_phate_conditional, Spatial, Celltype_list = process_data(scRNA, X_raw, cell_type_key, labels_dict, params['use_spatial'], params['use_celltype_conditional'], params['use_bio_prior'], params['representation'])
 
     multi_class_clf= pickle.load(open(f'/Users/rssantanu/Desktop/codebase/constrained_FM/datasets/metadata/cell_label_encoder_{args.h5ad_path.split("_")[0]}/multi_class_clf.pkl', 'rb'))
     label_encoder = pickle.load(open(f'/Users/rssantanu/Desktop/codebase/constrained_FM/datasets/metadata/cell_label_encoder_{args.h5ad_path.split("_")[0]}/label_encoder.pkl', 'rb'))
@@ -128,31 +139,25 @@ if __name__ == "__main__":
         X_phate_conditional_test = [X_phate_conditional[i] for i in test_idx]
 
 
-        if params['use_spatial']:
-            Spatial_train = [Spatial[i] for i in [0]+train_idx]
-            Spatial_test = [Spatial[i] for i in test_idx]
-        else:
-            Spatial_train = []
-            Spatial_test = []
-
-        if params['use_celltype']:
-            Celltype_list_train = [Celltype_list[i] for i in [0]+train_idx]
-            Celltype_list_test = [Celltype_list[i] for i in test_idx]
-        else:
-            Celltype_list_train = []
-            Celltype_list_test = []
+        
+        Spatial_train = [Spatial[i] for i in [0]+train_idx]
+        Spatial_test = [Spatial[i] for i in test_idx]
+        
+        Celltype_list_train = [Celltype_list[i] for i in [0]+train_idx]
+        Celltype_list_test = [Celltype_list[i] for i in test_idx]
+        
         
         n_times = len(X_phate_train)
 
         ot_cfm_model = train(params, n_times, X_phate_train, X_phate_conditional_train, device, fig_folder_address, Spatial_train, Celltype_list_train)
 
-        if params['use_celltype']:
+        if params['use_celltype_conditional']:
             cond_dim = 1
         else:
             cond_dim = 0
         node = NeuralODE(ConditionalODEVectorField(ot_cfm_model, cond_dim, params['dim']), solver="dopri5", sensitivity="adjoint")
         with torch.no_grad():
-            if params['use_celltype']:
+            if params['use_celltype_conditional']:
                 cfm_input = torch.cat([
                     torch.from_numpy(X_phate_train[0][:1000]).float().to(device),
                     torch.from_numpy(X_phate_conditional_train[0][:1000][:, None]).float().to(device)
@@ -168,7 +173,7 @@ if __name__ == "__main__":
             traj_fig_address = f'{fig_folder_address}/trajectory.png'
             plot_trajectories(scRNA, traj.cpu().numpy(), day_list, traj_fig_address)
 
-        # because Celltype_list is empty when the use_celltype is false
+        # because Celltype_list is empty when the use_celltype_conditional is false
         ref_idx= [len(X_phate[i]) for i in range(len(X_phate))]
         ref_idx= [sum(ref_idx[:i]) for i in range(len(ref_idx)+1)]
         gt_labels = scRNA.obs['celltype'].values.tolist()

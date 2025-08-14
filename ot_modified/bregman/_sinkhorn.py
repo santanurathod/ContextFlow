@@ -1490,6 +1490,7 @@ def sinkhorn_relative_entropy(a, b, M, reg, numItermax=1000, stopThr=1e-9,
 
     Kp = (1 / a).reshape(-1, 1) * K
 
+
     err = 1
     for ii in range(numItermax):
         uprev = u

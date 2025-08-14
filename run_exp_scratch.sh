@@ -9,4 +9,4 @@
 # python main.py --train_config v2_pca_REOT_scratch --h5ad_path GSE232025_stereoseq.h5ad
 
 python main.py --train_config v2_pca_REOT_CC1_scratch --h5ad_path GSE232025_stereoseq.h5ad
-python main.py --train_config v2_pca_REOT_CC2_scratch --h5ad_path GSE232025_stereoseq.h5ad
+# python main.py --train_config v2_pca_REOT_CC2_scratch --h5ad_path GSE232025_stereoseq.h5ad

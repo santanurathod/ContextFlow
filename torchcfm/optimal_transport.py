@@ -97,7 +97,7 @@ class OTPlanSampler:
         return Q_prior
         
         
-    def get_relative_entropy_prior(self, p0=None, p1=None, ct0=None, ct1=None, ot_reg_variation= 'relativeentropic_g+p', cc_communication_type=None, cc_index=None, ot_reg_lambda=None):
+    def get_relative_entropy_prior(self, p0=None, p1=None, ct0=None, ct1=None, ot_reg_variation= 'relativeentropic_g+p', cc_communication_type=None, cc_index=None, ot_reg_lambda=None, mc0=None, mc1=None, lr0=None, lr1=None, p_normalize=True, mc_normalize=False, lr_normalize=False):
         
         if 'p' in ot_reg_variation.split('_')[1]:
 
@@ -111,16 +111,36 @@ class OTPlanSampler:
             # P_Dist_norm = scaler.fit_transform(P_Dist)  # Now in [0, 1]
             # P_Dist_norm = torch.from_numpy(P_Dist_norm)
             # P_Dist= P_Dist_norm
-
-            P_Dist= P_Dist / P_Dist.max()
+            if p_normalize:
+                P_Dist= P_Dist / P_Dist.max()
+            
 
             
         # import pdb; pdb.set_trace()
 
         if ot_reg_variation == 'relativeentropic_g+p':
             Q_prior=F.softmax(-P_Dist, dim=1).detach().cpu().numpy()
+        
+        elif ot_reg_variation == 'relativeentropic_g+mc':
+            microenvironment_Dist= torch.cdist(mc0, mc1)**2
+            if mc_normalize:
+                microenvironment_Dist= microenvironment_Dist / microenvironment_Dist.max()
+            Q_prior=F.softmax(-microenvironment_Dist, dim=1).detach().cpu().numpy()
+        elif ot_reg_variation == 'relativeentropic_g+lr':
+            lr_Dist= torch.cdist(lr0, lr1)**2
+            if lr_normalize:
+                lr_Dist= lr_Dist / lr_Dist.max()
+            Q_prior=F.softmax(-lr_Dist, dim=1).detach().cpu().numpy()
+        elif ot_reg_variation == 'relativeentropic_g+mc+lr':
+            microenvironment_Dist= torch.cdist(mc0, mc1)**2
+            if mc_normalize:
+                microenvironment_Dist= microenvironment_Dist / microenvironment_Dist.max()
+            lr_Dist= torch.cdist(lr0, lr1)**2
+            if lr_normalize:
+                lr_Dist= lr_Dist / lr_Dist.max()
+            B_Dist= ot_reg_lambda*microenvironment_Dist+(1-ot_reg_lambda)*lr_Dist
+            Q_prior=F.softmax(-B_Dist, dim=1).detach().cpu().numpy()
 
-            
         elif ot_reg_variation == 'relativeentropic_g+p+c' and cc_communication_type == 'step_by_step': # when we consider communication between timepoints
             assert cc_index!=None
             cc_index= int(cc_index)
@@ -142,7 +162,7 @@ class OTPlanSampler:
         
 
         
-    def get_map(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, method="exact", cc_index=None, params=None):
+    def get_map(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, mc0=None, mc1=None, lr0=None, lr1=None, method="exact", cc_index=None, params=None):
         """Compute the OT plan (wrt squared Euclidean cost) between a source and a target
         minibatch.
 
@@ -166,6 +186,24 @@ class OTPlanSampler:
         ot_reg_variation= params['OT_reg_variation']
         ot_reg_lambda= params['OT_reg_lambda']
 
+        if 'g_normalize' in params:
+            g_normalize= params['g_normalize']
+        else:
+            g_normalize= False
+        if 'mc_normalize' in params:
+            mc_normalize= params['mc_normalize']
+        else:
+            mc_normalize= False
+        if 'lr_normalize' in params:
+            lr_normalize= params['lr_normalize']
+        else:
+            lr_normalize= False
+        if 'p_normalize' in params:
+            p_normalize= params['p_normalize']
+        else:
+            p_normalize= False
+
+
 
         if ot_reg_variation == 'relativeentropic_g+p+c':
             assert cc_communication_type!=None
@@ -178,15 +216,27 @@ class OTPlanSampler:
             x1 = x1.reshape(x1.shape[0], -1)
 
         gene_dist = torch.cdist(x0, x1)**2
+        microenvironment_dist = torch.cdist(mc0, mc1)**2
+        lr_dist = torch.cdist(lr0, lr1)**2
+        pair_dist = torch.cdist(p0, p1)**2
         
         # # the normalization is something I'm trying, earlier it wasn't the case so let's see if it works
-        # gene_dist = gene_dist / gene_dist.max()
+        if g_normalize:
+            gene_dist = gene_dist / gene_dist.max()
+
+        if mc_normalize:
+            microenvironment_dist = microenvironment_dist / microenvironment_dist.max()
+        
+        if lr_normalize:
+            lr_dist = lr_dist / lr_dist.max()
+        
+        if p_normalize:
+            pair_dist = pair_dist / pair_dist.max()
+
 
         # import pdb; pdb.set_trace()
         # if p0 is not None and p1 is not None and ct0 is not None and ct1 is not None:
         if ot_cost_variation == 'g+p+f':
-            pair_dist = torch.cdist(p0, p1)**2
-            pair_dist = pair_dist / pair_dist.max()
             M = lambda_*gene_dist + (1-lambda_)*pair_dist
             bio_prior = self.get_biological_map_prior(ct0, ct1)
             M = M + lambda_bio_prior*bio_prior
@@ -195,6 +245,12 @@ class OTPlanSampler:
             pair_dist = torch.cdist(p0, p1)**2
             pair_dist = pair_dist / pair_dist.max()
             M = lambda_*gene_dist + (1-lambda_)*pair_dist
+        elif ot_cost_variation == 'g+mc':
+            M = lambda_*gene_dist + (1-lambda_)*microenvironment_dist
+        elif ot_cost_variation == 'g+lr':
+            M = lambda_*gene_dist + (1-lambda_)*lr_dist
+        elif ot_cost_variation == 'g+mc+lr':
+            M = lambda_*gene_dist + (1-lambda_)*0.5*microenvironment_dist + (1-lambda_)*0.5*lr_dist
         else:
             M = gene_dist
         
@@ -208,6 +264,15 @@ class OTPlanSampler:
             p = self.ot_fn(a=a, b=b, M=M.detach().cpu().numpy(), Q_prior=Q_prior)
         elif method == "sinkhorn_relative_entropy" and ot_reg_variation == 'relativeentropic_g+p+c':
             Q_prior = self.get_relative_entropy_prior(p0=p0, p1=p1, ct0=ct0, ct1=ct1, ot_reg_variation=ot_reg_variation, cc_communication_type=cc_communication_type, cc_index=cc_index, ot_reg_lambda=ot_reg_lambda)
+            p = self.ot_fn(a=a, b=b, M=M.detach().cpu().numpy(), Q_prior=Q_prior)
+        elif method == "sinkhorn_relative_entropy" and ot_reg_variation == 'relativeentropic_g+mc':
+            Q_prior = self.get_relative_entropy_prior(p0=p0, p1=p1, ct0=ct0, ct1=ct1, ot_reg_variation=ot_reg_variation, cc_communication_type=cc_communication_type, cc_index=cc_index, ot_reg_lambda=ot_reg_lambda, mc0=mc0, mc1=mc1, lr0=lr0, lr1=lr1, p_normalize=p_normalize, mc_normalize=mc_normalize, lr_normalize=lr_normalize)
+            p = self.ot_fn(a=a, b=b, M=M.detach().cpu().numpy(), Q_prior=Q_prior)
+        elif method == "sinkhorn_relative_entropy" and ot_reg_variation == 'relativeentropic_g+lr':
+            Q_prior = self.get_relative_entropy_prior(p0=p0, p1=p1, ct0=ct0, ct1=ct1, ot_reg_variation=ot_reg_variation, cc_communication_type=cc_communication_type, cc_index=cc_index, ot_reg_lambda=ot_reg_lambda, mc0=mc0, mc1=mc1, lr0=lr0, lr1=lr1, p_normalize=p_normalize, mc_normalize=mc_normalize, lr_normalize=lr_normalize)
+            p = self.ot_fn(a=a, b=b, M=M.detach().cpu().numpy(), Q_prior=Q_prior)
+        elif method == "sinkhorn_relative_entropy" and ot_reg_variation == 'relativeentropic_g+mc+lr':
+            Q_prior = self.get_relative_entropy_prior(p0=p0, p1=p1, ct0=ct0, ct1=ct1, ot_reg_variation=ot_reg_variation, cc_communication_type=cc_communication_type, cc_index=cc_index, ot_reg_lambda=ot_reg_lambda, mc0=mc0, mc1=mc1, lr0=lr0, lr1=lr1, p_normalize=p_normalize, mc_normalize=mc_normalize, lr_normalize=lr_normalize)
             p = self.ot_fn(a=a, b=b, M=M.detach().cpu().numpy(), Q_prior=Q_prior)
         else:
             p = self.ot_fn(a=a, b=b, M=M.detach().cpu().numpy())
@@ -247,7 +312,7 @@ class OTPlanSampler:
         )
         return np.divmod(choices, pi.shape[1])
 
-    def sample_plan(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, replace=True, method="exact", cc_index=None, params=None):
+    def sample_plan(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, mc0=None, mc1=None, lr0=None, lr1=None, replace=True, method="exact", cc_index=None, params=None):
         r"""Compute the OT plan $\pi$ (wrt squared Euclidean cost) between a source and a target
         minibatch and draw source and target samples from pi $(x,z) \sim \pi$
 
@@ -268,7 +333,7 @@ class OTPlanSampler:
             represents the source minibatch drawn from $\pi$
         """
         
-        pi = self.get_map(x0, x1, p0, p1, ct0, ct1, method=method, cc_index=cc_index, params=params)
+        pi = self.get_map(x0, x1, p0, p1, ct0, ct1, mc0, mc1, lr0, lr1, method=method, cc_index=cc_index, params=params)
         i, j = self.sample_map(pi, x0.shape[0], replace=replace)
         return x0[i], x1[j]
 

@@ -51,48 +51,95 @@ def preprocess_data(scRNA):
 
 
 
-def process_data(scRNA, X_raw, cell_type_key='celltype', labels_dict=None, use_spatial=False, use_celltype=False, use_bio_prior=None, representation="umap"):
+# def process_data(scRNA, X_raw, cell_type_key='celltype', n_times=None, use_spatial=False, use_celltype=False, use_bio_prior=None, representation="umap"):
+
+#     X_phate=[]
+#     X_phate_conditional=[]
+#     Spatial=[]
+#     microenvironment_features= []
+#     LR_features= []
+#     Celltype_list= []
+#     centroids= []
+#     le = LabelEncoder()
+#     encoded_labels = le.fit_transform(scRNA.obs[cell_type_key].values)
+#     all_celltypes= scRNA.obs[cell_type_key].values.tolist()
+
+#     left_counter=0
+#     right_counter=X_raw[0].shape[0]
+#     for i in range(n_times):
+#         if representation == "umap":
+#             X_phate.append(scRNA.obsm["X_umap"][left_counter:right_counter])
+#         elif representation == "pca":
+#             X_phate.append(scRNA.obsm["X_pca"][left_counter:right_counter])
+#             microenvironment_features.append(scRNA.obsm["local_mean_X_pca"][left_counter:right_counter])
+#             LR_features.append(scRNA.obsm["LR_pattern"][left_counter:right_counter])
+#         elif representation =="scvi":
+#             X_phate.append(scRNA.obsm["X_scvi"][left_counter:right_counter])
+#             microenvironment_features.append(scRNA.obsm["local_mean_X_scvi"][left_counter:right_counter])
+#             LR_features.append(scRNA.obsm["LR_pattern"][left_counter:right_counter])
+
+#         X_phate_conditional.append(encoded_labels[left_counter:right_counter])
+        
+#         Spatial.append(scRNA.obsm['spatial'][left_counter:right_counter])
+
+#         # if use_bio_prior:
+#             # Celltype_list.append(all_celltypes[left_counter:right_counter])
+
+#         # Celltype_list.append(encoded_labels[left_counter:right_counter]) ## note: these are encoded labels, not the actual cell types
+
+#         Celltype_list.append(all_celltypes[left_counter:right_counter])
+
+#         # print(left_counter, right_counter, X_raw[i].shape)
+
+#         if i<n_times-1:
+#             left_counter=right_counter
+#             right_counter=left_counter+X_raw[i+1].shape[0]
+        
+        
+    
+#     return X_phate, X_phate_conditional, Spatial, Celltype_list, microenvironment_features, LR_features
+
+def process_data(scRNA, X_raw, cell_type_key='celltype', n_times=None, use_spatial=False, use_celltype=False, use_bio_prior=None, representation="umap"):
 
     X_phate=[]
     X_phate_conditional=[]
     Spatial=[]
+    microenvironment_features= []
+    LR_features= []
     Celltype_list= []
     centroids= []
     le = LabelEncoder()
     encoded_labels = le.fit_transform(scRNA.obs[cell_type_key].values)
     all_celltypes= scRNA.obs[cell_type_key].values.tolist()
 
-    left_counter=0
-    right_counter=X_raw[0].shape[0]
-    for i in range(len(labels_dict)):
-        if representation == "umap":
-            X_phate.append(scRNA.obsm["X_umap"][left_counter:right_counter])
-        elif representation == "pca":
-            X_phate.append(scRNA.obsm["X_pca"][left_counter:right_counter])
-        X_phate_conditional.append(encoded_labels[left_counter:right_counter])
-        # if use_spatial:
-        #     Spatial.append(scRNA.obsm['spatial'][left_counter:right_counter])
-        
-        # cen= [(scRNA.obsm['spatial'][left_counter:right_counter])[:,0].mean(), (scRNA.obsm['spatial'][left_counter:right_counter])[:,1].mean()]
-        # Spatial.append(scRNA.obsm['spatial'][left_counter:right_counter]-cen)
-
-        Spatial.append(scRNA.obsm['spatial'][left_counter:right_counter])
-
-        # if use_bio_prior:
-            # Celltype_list.append(all_celltypes[left_counter:right_counter])
-
-        # Celltype_list.append(encoded_labels[left_counter:right_counter]) ## note: these are encoded labels, not the actual cell types
-
-        Celltype_list.append(all_celltypes[left_counter:right_counter])
-
-        if i<len(labels_dict)-1:
-            left_counter=right_counter
-            right_counter+=X_raw[i+1].shape[0]
+    # Get unique days and sort them to ensure consistent ordering
+    all_times = sorted(scRNA.obs['day'].unique())
     
-    return X_phate, X_phate_conditional, Spatial, Celltype_list
+    for i, day in enumerate(all_times):
+        # Create boolean mask for cells from this day
+        day_mask = scRNA.obs['day'] == day
+        day_indices = np.where(day_mask)[0]
+        
+        if representation == "umap":
+            X_phate.append(scRNA.obsm["X_umap"][day_indices])
+        elif representation == "pca":
+            X_phate.append(scRNA.obsm["X_pca"][day_indices])
+            microenvironment_features.append(scRNA.obsm["local_mean_X_pca"][day_indices])
+            LR_features.append(scRNA.obsm["LR_pattern"][day_indices])
+        elif representation =="scvi":
+            X_phate.append(scRNA.obsm["X_scvi"][day_indices])
+            microenvironment_features.append(scRNA.obsm["local_mean_X_scvi"][day_indices])
+            LR_features.append(scRNA.obsm["LR_pattern"][day_indices])
 
+        X_phate_conditional.append(encoded_labels[day_indices])
+        Spatial.append(scRNA.obsm['spatial'][day_indices])
+        Celltype_list.append([all_celltypes[idx] for idx in day_indices])
 
-def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, Spatial=[], Celltype_list=[], device=None, params=None):
+        print(f"Day {day}: {len(day_indices)} cells, X_raw[{i}]: {X_raw[i].shape}")
+        
+    return X_phate, X_phate_conditional, Spatial, Celltype_list, microenvironment_features, LR_features
+
+def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, Spatial=[], Celltype_list=[], microenvironment_features=[], LR_features=[], device=None, params=None):
     """Construct a batch with point sfrom each timepoint pair"""
     ts = []
     xts = []
@@ -140,13 +187,27 @@ def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, Spa
             p0= None
             p1= None
 
+        if len(microenvironment_features) > 0:
+            mc0= torch.from_numpy(microenvironment_features[t_start][b0]).float().to(device)
+            mc1= torch.from_numpy(microenvironment_features[t_start+1][b1]).float().to(device)
+        else:
+            mc0= None
+            mc1= None
+            
+        if len(LR_features) > 0:
+            lr0= torch.from_numpy(LR_features[t_start][b0]).float().to(device)
+            lr1= torch.from_numpy(LR_features[t_start+1][b1]).float().to(device)
+        else:
+            lr0= None
+            lr1= None
+
         if return_noise:
             t, xt, ut, eps = FM.sample_location_and_conditional_flow(
                 x0, x1, return_noise=return_noise
             )
             noises.append(eps)
         else:
-            t, xt, ut = FM.sample_location_and_conditional_flow(x0, x1, p0, p1, ct0, ct1, return_noise=return_noise, cc_index=t_start, params=params)
+            t, xt, ut = FM.sample_location_and_conditional_flow(x0, x1, p0, p1, ct0, ct1, mc0, mc1, lr0, lr1, return_noise=return_noise, cc_index=t_start, params=params)
         ts.append(t + t_start)
         xts.append(xt)
         uts.append(ut)
@@ -164,7 +225,7 @@ def get_batch(FM, X, X_conditional, batch_size, n_times, return_noise=False, Spa
 
 
 
-def get_batch_new(FM, X, X_conditional, batch_size, train_idx, return_noise=False, lambda_=1, lambda_bio_prior=None, Spatial=[], Celltype_list=[], device=None, method="exact"):
+def get_batch_interpolation(FM, X, X_conditional, batch_size, n_times, return_noise=False, Spatial=[], Celltype_list=[], microenvironment_features=[], LR_features=[], device=None, params=None, train_idx=None):
     """Construct a batch with point from each timepoint pair
     getting proper pairs of data, I made this for the interpolation case
     """
@@ -215,13 +276,27 @@ def get_batch_new(FM, X, X_conditional, batch_size, train_idx, return_noise=Fals
             p0= None
             p1= None
 
+        if len(microenvironment_features) > 0:
+            mc0= torch.from_numpy(microenvironment_features[t_start][b0]).float().to(device)
+            mc1= torch.from_numpy(microenvironment_features[t_end][b1]).float().to(device)
+        else:
+            mc0= None
+            mc1= None
+            
+        if len(LR_features) > 0:
+            lr0= torch.from_numpy(LR_features[t_start][b0]).float().to(device)
+            lr1= torch.from_numpy(LR_features[t_end][b1]).float().to(device)
+        else:
+            lr0= None
+            lr1= None
+
         if return_noise:
-            t, xt, ut, eps = FM.sample_location_and_conditional_flow(
-                x0, x1, return_noise=return_noise
+            t, xt, ut, eps = FM.sample_location_and_conditional_flow_interpolation(
+                x0, x1, return_noise=return_noise, t_start=t_start, t_end=t_end
             )
             noises.append(eps)
         else:
-            t, xt, ut = FM.sample_location_and_conditional_flow(x0, x1, p0, p1, ct0, ct1, return_noise=return_noise, lambda_= lambda_, lambda_bio_prior=lambda_bio_prior, method=method)
+            t, xt, ut = FM.sample_location_and_conditional_flow_interpolation(x0, x1, p0, p1, ct0, ct1, mc0, mc1, lr0, lr1, return_noise=return_noise, cc_index=t_start, params=params, t_start=t_start, t_end=t_end)
         ts.append(t + t_start)
         xts.append(xt)
         uts.append(ut)

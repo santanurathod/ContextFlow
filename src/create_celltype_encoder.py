@@ -58,5 +58,5 @@ if __name__ == "__main__":
 """
 example usage:
 
-python create_celltype_encoder.py --h5ad_path GSE232025_stereoseq.h5ad
+python src/create_celltype_encoder.py --h5ad_path GSE232025_stereoseq.h5ad
 """

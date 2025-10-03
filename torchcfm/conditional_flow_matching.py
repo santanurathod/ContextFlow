@@ -126,6 +126,15 @@ class ConditionalFlowMatcher:
         sigma_t = self.compute_sigma_t(t)
         sigma_t = pad_t_like_x(sigma_t, x0)
         return mu_t + sigma_t * epsilon
+    
+    def sample_xt_interpolation(self, x0, x1, t, epsilon, delta_t=1):
+        """
+        scale the sample xt from the probability path N(t/delta_t * x1 + (1 - t/delta_t) * x0, sigma) by the delta_t incase of non-uniform time steps
+        """
+        mu_t = self.compute_mu_t(x0, x1, t/delta_t)
+        sigma_t = self.compute_sigma_t(t/delta_t)
+        sigma_t = pad_t_like_x(sigma_t, x0)
+        return mu_t + sigma_t * epsilon
 
     def compute_conditional_flow(self, x0, x1, t, xt):
         """
@@ -151,6 +160,15 @@ class ConditionalFlowMatcher:
         """
         del t, xt
         return x1 - x0
+    
+    def compute_conditional_flow_interpolation(self, x0, x1, t, xt, delta_t=1):
+        """
+        scale the conditional vector field ut(x1|x0) = x1 - x0 by the delta_t incase of non-uniform time steps
+        """
+        del t, xt
+        return (x1 - x0) / delta_t
+
+    
 
     def sample_noise_like(self, x):
         return torch.randn_like(x)
@@ -197,6 +215,25 @@ class ConditionalFlowMatcher:
         else:
             return t, xt, ut
 
+    def sample_location_and_conditional_flow_interpolation(self, x0, x1, t=None, return_noise=False, t_start=None, t_end=None):
+        """
+        ditto copy but interpolation; don't want to change the original function 
+        """
+        if t is None:
+            t = torch.rand(x0.shape[0]).type_as(x0)
+        assert len(t) == x0.shape[0], "t has to have batch size dimension"
+
+        delta_t = t_end - t_start
+        t = delta_t * t
+        
+        eps = self.sample_noise_like(x0)
+        xt = self.sample_xt_interpolation(x0, x1, t, eps, delta_t=delta_t)
+        ut = self.compute_conditional_flow_interpolation(x0, x1, t, xt, delta_t=delta_t)
+        if return_noise:
+            return t, xt, ut, eps
+        else:
+            return t, xt, ut
+
     def compute_lambda(self, t):
         """Compute the lambda function, see Eq.(23) [3].
 
@@ -234,7 +271,7 @@ class ExactOptimalTransportConditionalFlowMatcher(ConditionalFlowMatcher):
         super().__init__(sigma)
         self.ot_sampler = OTPlanSampler(method=ot_method, reg=entropy_reg)
 
-    def sample_location_and_conditional_flow(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, t=None, return_noise=False, cc_index=None,  params=None):
+    def sample_location_and_conditional_flow(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, mc0=None, mc1=None, lr0=None, lr1=None, t=None, return_noise=False, cc_index=None,  params=None):
         r"""
         Compute the sample xt (drawn from N(t * x1 + (1 - t) * x0, sigma))
         and the conditional vector field ut(x1|x0) = x1 - x0, see Eq.(15) [1]
@@ -270,7 +307,7 @@ class ExactOptimalTransportConditionalFlowMatcher(ConditionalFlowMatcher):
         method= params['ot_method']
         cc_communication_type= params['cc_communication_type']
 
-        x0, x1 = self.ot_sampler.sample_plan(x0, x1, p0, p1, ct0, ct1, method=method, cc_index=cc_index, params=params)
+        x0, x1 = self.ot_sampler.sample_plan(x0, x1, p0, p1, ct0, ct1, mc0, mc1, lr0, lr1, method=method, cc_index=cc_index, params=params)
 
         # if p0 is not None and p1 is not None and ct0 is not None and ct1 is not None:
         #     x0, x1 = self.ot_sampler.sample_plan(x0, x1, p0, p1, ct0, ct1, lambda_=lambda_, lambda_bio_prior=lambda_bio_prior, method=method, cc_communication_type= cc_communication_type, cc_index= cc_index)
@@ -280,6 +317,21 @@ class ExactOptimalTransportConditionalFlowMatcher(ConditionalFlowMatcher):
         #     x0, x1 = self.ot_sampler.sample_plan(x0, x1)
             
         return super().sample_location_and_conditional_flow(x0, x1, t, return_noise)
+
+    def sample_location_and_conditional_flow_interpolation(self, x0, x1, p0=None, p1=None, ct0=None, ct1=None, mc0=None, mc1=None, lr0=None, lr1=None, t=None, return_noise=False, cc_index=None,  params=None, t_start=None, t_end=None):
+        """
+        ditto copy but interpolation; don't want to change the original function 
+        """
+
+        lambda_= params['lambda_']
+        lambda_bio_prior= params['lambda_bio_prior']
+        method= params['ot_method']
+        cc_communication_type= params['cc_communication_type']
+
+        x0, x1 = self.ot_sampler.sample_plan(x0, x1, p0, p1, ct0, ct1, mc0, mc1, lr0, lr1, method=method, cc_index=cc_index, params=params)
+
+            
+        return super().sample_location_and_conditional_flow_interpolation(x0, x1, t, return_noise, t_start= t_start,t_end= t_end)
 
     def guided_sample_location_and_conditional_flow(
         self, x0, x1, y0=None, y1=None, t=None, return_noise=False

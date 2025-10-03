@@ -1,0 +1,1 @@
+python evaluation.py --train_config vi_pca_C_g_REOT1_mc+lr --h5ad_path GSE232025_stereoseq_g_10000_nzp_0.1.h5ad --new_experiment v_interp_post_prior_correction_REOT_w_C_g_reg_mc+lr_ti3 --interpolation True --train_idx 0 1 2 4 --test_idx 3

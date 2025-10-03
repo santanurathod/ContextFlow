@@ -1,0 +1,22 @@
+{
+    "use_celltype_conditional": false,
+    "use_spatial": true,
+    "use_bio_prior": false,
+    "OT_cost_variation": "g+p",
+    "OT_reg_variation": "relativeentropic_g+p+c",
+    "representation": "pca",
+    "ot_method": "sinkhorn_relative_entropy",
+    "cc_communication_type": "step_by_step",
+    "entropy_reg": 0.1,
+    "OT_reg_lambda": 0.8,
+    "cfm_model": "MLP",
+    "lambda_": 0.4,
+    "lambda_bio_prior": 0,
+    "batch_size": 256,
+    "sigma": 0.9,
+    "learning_rate": 1e-4,
+    "n_epochs": 10000,
+    "w": 10,
+    "time_varying": true,
+    "trajectory_steps": 400
+}

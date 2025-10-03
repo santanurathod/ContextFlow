@@ -14,7 +14,7 @@ from torchdyn.core import NeuralODE
 from tqdm import tqdm
 import pickle
 from src.ode_helper_functions import *
-from src.data_loading import preprocess_data, process_data, get_batch
+from src.data_loading import preprocess_data, process_data, get_batch, get_batch_interpolation
 from src.plots import plot_trajectories, plot_trajectories_new
 from src.evaluate import *
 
@@ -33,7 +33,7 @@ MODEL_REGISTRY = {
 }
 
 
-def train(params, n_times, X_phate, X_phate_conditional, device, fig_address, Spatial=[], Celltype_list=[]):
+def train(params, n_times, X_phate, X_phate_conditional, device, fig_address, Spatial=[], Celltype_list=[], microenvironment_features=[], LR_features=[], train_idx=[], interpolation=False):
     use_cuda = torch.cuda.is_available()
     batch_size = params['batch_size']
     sigma = params['sigma']
@@ -58,7 +58,10 @@ def train(params, n_times, X_phate, X_phate_conditional, device, fig_address, Sp
     losses = []
     for i in tqdm(range(params['n_epochs'])):
         ot_cfm_optimizer.zero_grad()
-        t, xt, ut, xt_conditional = get_batch(FM, X_phate, X_phate_conditional, batch_size, n_times, Spatial=Spatial, Celltype_list=Celltype_list, device=device, params=params)
+        if not interpolation:
+            t, xt, ut, xt_conditional = get_batch(FM, X_phate, X_phate_conditional, batch_size, n_times, Spatial=Spatial, Celltype_list=Celltype_list, microenvironment_features=microenvironment_features, LR_features=LR_features, device=device, params=params)
+        else:
+            t, xt, ut, xt_conditional = get_batch_interpolation(FM, X_phate, X_phate_conditional, batch_size, n_times, Spatial=Spatial, Celltype_list=Celltype_list, microenvironment_features=microenvironment_features, LR_features=LR_features, device=device, params=params, train_idx=train_idx)
         if params['use_celltype_conditional']:
             cfm_input = torch.cat([xt, xt_conditional[:, None], t[:, None]], dim=-1)
         else:
@@ -86,6 +89,10 @@ if __name__ == "__main__":
     parser.add_argument("--n_folds", type=int, default=1, help="Number of folds for cross-validation")
     parser.add_argument("--use_all_data", type=bool, default=False, help="Use all data for training")
     parser.add_argument("--new_experiment", type=str, default=None, help="there's several design choices for the experiment")
+    parser.add_argument("--interpolation", type=bool, default=False, help="Use interpolation for training")
+    parser.add_argument('--train_idx', nargs='+', type=int, help='List of training indices')
+    parser.add_argument('--test_idx', nargs='+', type=int, help='List of test indices')
+    parser.add_argument("--test_size", type=float, default=0.2, help="Test size")
     args = parser.parse_args()
 
     num_folds = args.n_folds
@@ -104,10 +111,10 @@ if __name__ == "__main__":
     print(f'fig_folder_address: {fig_folder_address}')
 
     scRNA = ad.read_h5ad(os.path.join(os.path.dirname(__file__), 'datasets/h5ad_processed_datasets', args.h5ad_path))
-    labels_dict = {'1':1, '2':2, '3':3, '4':4, '5':5}
+    total_times = len(scRNA.obs['day'].unique())
     cell_type_key = 'celltype'
 
-    params = json.load(open(f'train_configs/{args.train_config}.json'))
+    params = json.load(open(f'train_configs/post_prior_correction/{args.train_config}.json'))
 
     # add more params keys
     params['dim'] = scRNA.obsm[f'X_{params["representation"]}'].shape[1]
@@ -118,13 +125,19 @@ if __name__ == "__main__":
     day_list = (scRNA.obs["day"]).values.tolist()
 
     X_raw, data_df = preprocess_data(scRNA)
-    X_phate, X_phate_conditional, Spatial, Celltype_list = process_data(scRNA, X_raw, cell_type_key, labels_dict, params['use_spatial'], params['use_celltype_conditional'], params['use_bio_prior'], params['representation'])
-
+    X_phate, X_phate_conditional, Spatial, Celltype_list, microenvironment_features, LR_features = process_data(scRNA, X_raw, cell_type_key, total_times, params['use_spatial'], params['use_celltype_conditional'], params['use_bio_prior'], params['representation'])
+    for i,j in zip(X_phate, X_raw):
+        print(i.shape, j.shape)
+    # import pdb; pdb.set_trace()
     multi_class_clf= pickle.load(open(f'/Users/rssantanu/Desktop/codebase/constrained_FM/datasets/metadata/cell_label_encoder_{args.h5ad_path.split("_")[0]}/multi_class_clf.pkl', 'rb'))
     label_encoder = pickle.load(open(f'/Users/rssantanu/Desktop/codebase/constrained_FM/datasets/metadata/cell_label_encoder_{args.h5ad_path.split("_")[0]}/label_encoder.pkl', 'rb'))
     
     for experiment_idx in range(num_folds):
-        train_idx, test_idx = train_test_split(np.arange(len(X_phate))[1:], test_size=0.2, random_state=44) # for this it's 123
+        if args.train_idx is None and args.test_idx is None:
+            train_idx, test_idx = train_test_split(np.arange(len(X_phate))[1:], test_size=args.test_size, random_state=44) # for this it's 123
+        else:
+            train_idx = args.train_idx
+            test_idx = args.test_idx
         train_idx, test_idx = sorted(train_idx), sorted(test_idx)
 
         if use_all_data:
@@ -145,11 +158,20 @@ if __name__ == "__main__":
         
         Celltype_list_train = [Celltype_list[i] for i in [0]+train_idx]
         Celltype_list_test = [Celltype_list[i] for i in test_idx]
+
+        microenvironment_features_train = [microenvironment_features[i] for i in [0]+train_idx]
+        microenvironment_features_test = [microenvironment_features[i] for i in test_idx]
+
+        LR_features_train = [LR_features[i] for i in [0]+train_idx]
+        LR_features_test = [LR_features[i] for i in test_idx]
         
         
         n_times = len(X_phate_train)
 
-        ot_cfm_model = train(params, n_times, X_phate_train, X_phate_conditional_train, device, fig_folder_address, Spatial_train, Celltype_list_train)
+        if not args.interpolation:
+            ot_cfm_model = train(params, n_times, X_phate_train, X_phate_conditional_train, device, fig_folder_address, Spatial_train, Celltype_list_train, microenvironment_features_train, LR_features_train, train_idx=train_idx)
+        else:
+            ot_cfm_model = train(params, n_times, X_phate, X_phate_conditional, device, fig_folder_address, Spatial, Celltype_list, microenvironment_features, LR_features, train_idx= train_idx, interpolation=True)
 
         if params['use_celltype_conditional']:
             cond_dim = 1
@@ -183,7 +205,7 @@ if __name__ == "__main__":
         # import pdb; pdb.set_trace()
 
         try:
-            mmd_list_next_step, wassersten_list_next_step, energy_list_next_step, r2_list_next_step, weighted_wasserstein_list_next_step = evaluate_next_step(node, X_phate, device, weighted_wasserstein_data=weighted_wasserstein_data)
+            mmd_list_next_step, wassersten_list_next_step, energy_list_next_step, r2_list_next_step, weighted_wasserstein_list_next_step, _, _ = evaluate_next_step(node, X_phate, device, weighted_wasserstein_data=weighted_wasserstein_data)
             plt.figure(figsize=(8,6))
             plt.plot([1+i for i in range(len(mmd_list_next_step))], mmd_list_next_step, label='MMD', marker='o')
             plt.plot([1+i for i in range(len(wassersten_list_next_step))], wassersten_list_next_step, label='Wasserstein', marker='s')
@@ -205,7 +227,7 @@ if __name__ == "__main__":
             pass
         
         
-        mmd_list_IVP, wassersten_list_IVP, energy_list_IVP, r2_list_IVP, weighted_wasserstein_list_IVP = evaluate_IVP(traj, X_phate, device, weighted_wasserstein_data=weighted_wasserstein_data)
+        mmd_list_IVP, wassersten_list_IVP, energy_list_IVP, r2_list_IVP, weighted_wasserstein_list_IVP, _, _ = evaluate_IVP(traj, X_phate, device, weighted_wasserstein_data=weighted_wasserstein_data)
 
         plt.figure(figsize=(8,6))
         plt.plot(range(len(mmd_list_IVP)), mmd_list_IVP, label='MMD', marker='o')
@@ -224,3 +246,12 @@ if __name__ == "__main__":
         metric_dict_IVP = {'mmd': mmd_list_IVP, 'wasserstein': wassersten_list_IVP, 'energy': energy_list_IVP, 'r2': r2_list_IVP, 'weighted_wasserstein': weighted_wasserstein_list_IVP}
         with open(f'{fig_folder_address}/IVP_error.json', 'w') as f:
             json.dump(metric_dict_IVP, f)
+
+
+        ## save the model
+        model_path = os.path.join(fig_folder_address, 'neural_ode_model.pth')
+
+        # Assuming `node` is your model
+        torch.save(ot_cfm_model.state_dict(), model_path)
+
+        print(f"Model saved to {model_path}")

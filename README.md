@@ -1,94 +1,132 @@
-# Constrained Flow Matching
+# ContextFlow Training and Evaluation Pipeline
 
-This repository contains code and instructions for processing single-cell RNA-seq datasets and running constrained flow matching experiments.
+This repository contains code and instructions for processing spatiotemporal omics datasets and running experiments with ContextFlow framework.
+
+The guide explains how to train and evaluate trajectory inference models using ContextFlow.
+
+## Prerequisites
+
+Complete Steps 1-2 from the datasets README to download and preprocess data.
+
+## Pipeline Overview
+
+### 1. Download and Preprocess Datasets
+
+Follow the instructions in the `datasets/` folder README to:
+- Download raw datasets
+- Preprocess and generate `.h5ad` files
+
+### 2. Compute Celltype Encoder (for Weighted Wasserstein)
+
+Generate the celltype encoder required for computing weighted Wasserstein distances:
+
+```bash
+python src/create_celltype_encoder.py --h5ad_path <file_from_step1.h5ad>
+```
+
+**Example:**
+```bash
+python src/create_celltype_encoder.py --h5ad_path GSE232025_stereoseq_g_10000_nzp_0.1.h5ad
+```
+
+> `<file_from_step1.h5ad>` refers to the preprocessed `.h5ad` file created in Step 1 (e.g., `GSE232025_stereoseq_g_10000_nzp_0.1.h5ad`)
+
+### 3. Train and Evaluate Models
+
+#### Model Variants
+
+- **CTF-H**: ContextFlow with entropic regularization
+- **MOTFM**: Minibatch-OT Flow Matching (baseline)
+
+#### Parameters
+
+- `--train_config`: Model configuration specifying OT coupling type and hyperparameters (see `train_configs/README.md` for details)
+- `--h5ad_path`: Path to the preprocessed dataset file
+- `--new_experiment`: Experiment/folder name for saving validation metrics and trained models
+- `--interpolation`: Set to `True` for interpolation tasks
+- `--train_idx`: Indices of time points for training
+- `--test_idx`: Index of held-out time point for testing
 
 ---
 
-## Step 1: Prepare Raw Data
+## Training Commands
 
+### CTF-H (λ = 1)
+
+#### Interpolation
 ```bash
-cd datasets
-mkdir raw_datasets
-mkdir h5ad_processed_datasets
-cd raw_datasets
-mkdir GSE149457
-mkdir GSE232025
+python main.py \
+    --train_config vi_pca_C_g_REOT1_mc \
+    --h5ad_path GSE232025_stereoseq_g_10000_nzp_0.1.h5ad \
+    --new_experiment v_interp_post_prior_correction_REOT_w_C_g_reg_mc_ti2 \
+    --interpolation True \
+    --train_idx 0 1 3 4 \
+    --test_idx 2
 ```
 
-- **Copy the raw data:**
-  - Place the chicken hearts data in the `GSE149457` folder.
-  - Place the stereoseq data in the `GSE232025` folder.
-- **File naming:**
-  - For Stereoseq, rename the raw files as:
-    - `d0_spatial_scRNAseq.h5ad`
-    - `d1_spatial_scRNAseq.h5ad`
-    - `d2_spatial_scRNAseq.h5ad`
-    - `d3_spatial_scRNAseq.h5ad`
-    - `d4_spatial_scRNAseq.h5ad`
-
----
-
-## Step 2: Process the Data
-
-Run the following commands to process and generate the `.h5ad` files:
-
+#### Extrapolation
 ```bash
-python datasets/process_data.py --GSE GSE149457 --name_suffix chicken_hearts
-python datasets/process_data.py --GSE GSE232025 --name_suffix stereo_seq
-```
-
----
-## Step 2.1 [Optional]: Incase you want to use weighted wasserstein
-
-Need to generate the multi-class label classifier first; here it's XGBOOST model
-
-```bash
-python create_celltype_encoder.py --h5ad_path GSE232025_stereoseq.h5ad
-```
-
-## Step 2.2 [Optional]: Incase we need Ligand-Receptor Interaction network biological prior
-
-Need to create the communication matrix first.
-** We have two variations:**
-  - all_at_once: considers communication as a bulk for all the days
-  - step_by_step: cell-cell communication for each day; between t-t+1, consider the LR_CC for day_{t}
-
-```bash
-python creat_cell_cell_communication_matrix.py \
-    --input_file /Users/rssantanu/Desktop/codebase/constrained_FM/datasets/h5ad_processed_datasets/GSE232025_stereoseq.h5ad \
-    --output_dir /Users/rssantanu/Desktop/codebase/constrained_FM/datasets/metadata/cell_cell_communication_GSE232025 \
-    --groupby celltype \
-    --stage_key day \
-    --resource_name consensus \
-    --verbose
-```
-
-
----
-## Step 3: Run Experiments
-
-- **Experiment configurations** are provided as JSON files in the `train_configs` folder.
-
-### Run a single experiment (example):
-
-```bash
-python main.py --train_config vi_pca_C_g_EOT --h5ad_path GSE232025_stereoseq.h5ad
-```
-
-### Run multiple experiments:
-
-```bash
-bash run_exp_latest.sh
+python main.py \
+    --train_config vi_pca_C_g_REOT1_mc \
+    --h5ad_path GSE232025_stereoseq_g_10000_nzp_0.1.h5ad \
+    --new_experiment v_post_prior_correction_REOT_w_C_g_reg_mc
 ```
 
 ---
 
-## Notes
+### CTF-H (λ = 0)
 
-- **Data files:** Large data files are not tracked in this repository. Please follow the instructions above to prepare your own data folders.
-- **Configuration:** You can modify or add experiment configurations in the `train_configs` directory.
+#### Interpolation
+```bash
+python main.py \
+    --train_config vi_pca_C_g_REOT1_lr \
+    --h5ad_path GSE232025_stereoseq_g_10000_nzp_0.1.h5ad \
+    --new_experiment v_interp_post_prior_correction_REOT_w_C_g_reg_lr_ti2 \
+    --interpolation True \
+    --train_idx 0 1 3 4 \
+    --test_idx 2
+```
+
+#### Extrapolation
+```bash
+python main.py \
+    --train_config vi_pca_C_g_REOT1_lr \
+    --h5ad_path GSE232025_stereoseq_g_10000_nzp_0.1.h5ad \
+    --new_experiment v_post_prior_correction_REOT_w_C_g_reg_lr
+```
 
 ---
+
+### MOTFM (Baseline)
+
+#### Interpolation
+```bash
+python main.py \
+    --train_config vi_pca_C_g_EOT \
+    --h5ad_path GSE232025_stereoseq_g_10000_nzp_0.1.h5ad \
+    --new_experiment v_interp_post_prior_correction_EOT_w_g_ti2 \
+    --interpolation True \
+    --train_idx 0 1 3 4 \
+    --test_idx 2
+```
+
+#### Extrapolation
+```bash
+python main.py \
+    --train_config vi_pca_C_g_EOT \
+    --h5ad_path GSE232025_stereoseq_g_10000_nzp_0.1.h5ad \
+    --new_experiment v_post_prior_correction_EOT_w_g
+```
+
+---
+
+## Configuration Details
+
+For detailed information about training configurations and hyperparameters, refer to `train_configs/README.md`.
+
+## Output
+
+Trained models and validation metrics are saved in directories named according to the `--new_experiment` parameter.
 
 ## License
 

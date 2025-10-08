@@ -1,4 +1,4 @@
-# ContextFlow Training and Evaluation Pipeline
+# ContextFlow Training and Evaluation Steps
 
 This repository contains code and instructions for processing spatiotemporal omics datasets and running experiments with ContextFlow framework.
 
@@ -8,7 +8,7 @@ The guide explains how to train and evaluate trajectory inference models using C
 
 Complete Steps 1-2 from the datasets README to download and preprocess data.
 
-## Pipeline Overview
+## Overview
 
 ### 1. Download and Preprocess Datasets
 

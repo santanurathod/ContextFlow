@@ -78,7 +78,8 @@ venv.bak/
 # ========================
 
 # Exclude large data folders
-datasets/raw_datasets/
+datasets/raw_datasets/*
+!datasets/raw_datasets/download_datasets.py
 datasets/h5ad_processed_datasets/
 datasets/orthodb/
 datasets/metadata/
